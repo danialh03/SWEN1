@@ -1,0 +1,59 @@
+Zwischenabgabe
+
+1.	Ziel der Anwendung
+REST-Server in C#, der Nutzer registriert und einloggt und Medien in einer PostgreSQL Datenbank verwaltet.
+Nach erfolgreichem Login bekommt der User einen Token. Mit diesem Token im HTTP-Header kann er Medien anlegen, anzeigen, ändern und löschen.
+
+2.	Design / Aufbau
+	•	Kein Framework (kein ASP.NET), sondern eigener Server mit HttpListener.
+	•	Trennung in Schichten:
+		o	Server: nimmt http Requests an.
+		o	Handler: entscheiden, welcher Endpoint aufgerufen wurde und was passieren soll.
+		o	Repositories: sprechen mit der Datenbank (SQL).
+		o	Auth: Hashing von Passwörtern und Token-Verwaltung.
+	•	Handler System statt großem Program.cs:
+	Eine zentrale Methode (Handler.HandleEvent) verteilt jede Anfrage an alle Handler-Klassen. 
+	Neue Endpoints bedeuten nur: neue Handler-Klasse schreiben, Program.cs bleibt unverändert.
+
+3.	Wichtigste Klassen
+Server:
+	•	HttpRestServer: kapselt HttpListener, hört auf Port 8080, erzeugt pro Request ein HttpRestEventArgs und löst ein Event aus.
+	•	HttpRestEventArgs: enthält Methode, Pfad, Body als JSON und eine Respond Methode.
+Handler:
+	•	IHandler: Interface: jede Handler-Klasse muss Handle(HttpRestEventArgs e) haben.
+	•	Handler: Basis für alle Handler, verteilt Requests (HandleEvent) und hat Hilfsfunktionen (Token aus Header, Fehlerantwort, JSON-Helfer).
+	•	UserHandler: Endpoints /api/users/register und /api/users/login, nutzt UserRepository, PasswordHelper, AuthManager.
+	•	MediaHandler: Endpoints /api/media und /api/media/{id}, prüft Token über AuthManager, nutzt MediaRepository für CRUD auf Media.
+Datenbank / Modelle:
+	•	DatabaseConnection:öffnet Verbindungen zu PostgreSQL.
+	•	User, MediaItem: einfache Datenklassen für Tabellen users und media.
+	•	UserRepository, MediaRepository: Methoden für INSERT, SELECT, UPDATE, DELETE auf den jeweiligen Tabellen.
+Auth:
+	•	PasswordHelper: erstellt SHA256-Hashes von Passwörtern.
+	•	AuthManager: verwaltet ein Dictionary token -> userId.
+Sonstiges:
+	•	AppServices: stellt eine gemeinsame DatabaseConnection und Repositories bereit.
+	•	Program: Einstiegspunkt: testet DB kurz, erstellt HttpRestServer, registriert Handler.HandleEvent, startet den Server.
+
+4.	Struktur
+Program
+	→ HttpRestServer
+	→ HttpRestEventArgs
+	→ Handler.HandleEvent (statisch)
+	→ UserHandler → UserRepository → users-Tabelle
+	→ MediaHandler → MediaRepository → media-Tabelle
+
+AuthManager und PasswordHelper werden von UserHandler/MediaHandler für Login, Passwort Hashing und Token Prüfung verwendet.
+	
+5.	Umgesetzte Funktionen für die Zwischenabgabe
+	•	POST /api/users/register: neuen User anlegen (mit gehashtem Passwort, Konflikt bei doppeltem Namen).
+	•	POST /api/users/login: Zugangsdaten prüfen, Token erzeugen.
+	•	Alle Media-Endpunkte verlangen Authentication: Bearer <token>.
+	•	GET /api/media: Liste aller Medien.
+	•	POST /api/media: neues Medium anlegen (CreatedBy = eingeloggter User).
+	•	GET /api/media/{id}: einzelnes Medium anzeigen.
+	•	PUT /api/media/{id}: Medium bearbeiten, nur Ersteller.
+	•	DELETE /api/media/{id}: Medium löschen, nur Ersteller.
+
+Github: https://github.com/danialh03/SWEN1.git
+

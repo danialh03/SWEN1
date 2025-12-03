@@ -1,0 +1,222 @@
+{
+	"info": {
+		"_postman_id": "8d3e5b76-8abb-451f-b09d-af6d30dc0d4c",
+		"name": "MRP Zwischenabgabe",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "50419306",
+		"_collection_link": "https://if24b062-4635615.postman.co/workspace/D%C3%A4ni's-Workspace~db3924fe-a451-4825-8119-064f203f65ab/collection/50419306-8d3e5b76-8abb-451f-b09d-af6d30dc0d4c?action=share&source=collection_link&creator=50419306"
+	},
+	"item": [
+		{
+			"name": "User – Register",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"Username\": \"testuser3\",\r\n  \"Password\": \"1234\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/users/register",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"users",
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "User – Login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"Username\": \"testuser\",\r\n  \"Password\": \"1234\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/users/login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"users",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Media – Create",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authentication",
+						"value": "Bearer testuser3-mrpToken-db6c5f79-63ee-4453-919f-ec958bef9710",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"title\": \"Avatar1\",\r\n  \"description\": \"Blue aliens on a planet\",\r\n  \"mediaType\": \"movie\",\r\n  \"releaseYear\": 2009,\r\n  \"genre\": \"Sci-Fi\",\r\n  \"ageRestriction\": 12\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/media",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"media"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Media – List",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authentication",
+						"value": "Bearer testuser3-mrpToken-db6c5f79-63ee-4453-919f-ec958bef9710",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8080/api/media",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"media"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Media – Get by Id",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authentication",
+						"value": "Bearer testuser3-mrpToken-db6c5f79-63ee-4453-919f-ec958bef9710",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8080/api/media/3",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"media",
+						"3"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Media – Update",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authentication",
+						"value": "Bearer testuser3-mrpToken-db6c5f79-63ee-4453-919f-ec958bef9710",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"title\": \"test\",\r\n  \"description\": \"test1\",\r\n  \"mediaType\": \"movie\",\r\n  \"releaseYear\": 2010,\r\n  \"genre\": \"Sci-Fi\",\r\n  \"ageRestriction\": 12\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/media/2",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"media",
+						"2"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Media – Delete",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authentication",
+						"value": "Bearer testuser3-mrpToken-db6c5f79-63ee-4453-919f-ec958bef9710",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8080/api/media/3",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"media",
+						"3"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
