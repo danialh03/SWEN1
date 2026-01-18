@@ -15,4 +15,9 @@
     <PackageReference Include="Npgsql" Version="9.0.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="DhProjekt.Tests\**\*.cs" />
+    <None Remove="DhProjekt.Tests\**\*" />
+  </ItemGroup>
+
 </Project>

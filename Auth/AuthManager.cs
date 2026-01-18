@@ -1,34 +1,33 @@
 ﻿using System;
-using System.Collections.Generic;
+using DhProjekt.Database;
 
 namespace DhProjekt.Auth
 {
     public static class AuthManager
     {
-        // token -> userId
-        private static readonly Dictionary<string, int> _tokens = new();
-        private static readonly object _lock = new();
+        public static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(12);
 
-        public static string CreateToken(int userId, string username)
+        public static string GenerateToken()
         {
-            var token = $"{username}-mrpToken-{Guid.NewGuid()}";
+            return Guid.NewGuid().ToString("N");
+        }
 
-            lock (_lock)
-            {
-                _tokens[token] = userId;
-            }
 
+        // Token erstellen + direkt in DB speichern (pro User zugeordnet)
+        public static string CreateToken(int userId, SessionRepository sessions)
+        {
+            var token = GenerateToken();
+
+            var expiresAtUtc = DateTime.UtcNow.Add(TokenLifetime);
+
+            sessions.CreateSession(token, userId, expiresAtUtc);
             return token;
         }
 
-        public static int? GetUserIdForToken(string token)
+        // Token validieren über DB (inkl. Ablauf)
+        public static int? GetUserIdForToken(string token, SessionRepository sessions)
         {
-            lock (_lock)
-            {
-                return _tokens.TryGetValue(token, out var userId)
-                    ? userId
-                    : (int?)null;
-            }
+            return sessions.GetUserIdForToken(token);
         }
     }
 }

@@ -3,11 +3,9 @@ using System.Net;
 using System.Text.Json.Nodes;
 using DhProjekt.Auth;
 using DhProjekt.Server;
-using DhProjekt.Database;
 
 namespace DhProjekt.Handlers
 {
-    // Handler für User-Endpoints: Registrierung & Login
     public sealed class UserHandler : Handler, IHandler
     {
         public override void Handle(HttpRestEventArgs req)
@@ -15,25 +13,29 @@ namespace DhProjekt.Handlers
             var path = req.Path;
             var method = req.Method;
 
-            //  kümmert sich nur um /api/users/...
             if (!path.StartsWith("/api/users"))
                 return;
 
-            // POST /api/users/register
+            // 1) Register
             if (path == "/api/users/register" && method == HttpMethod.Post)
             {
                 HandleRegister(req);
                 return;
             }
 
-            // POST /api/users/login
+            // 2) Login
             if (path == "/api/users/login" && method == HttpMethod.Post)
             {
                 HandleLogin(req);
                 return;
             }
 
-
+            // 3) Recommendations: GET /api/users/{username}/recommendations
+            if (method == HttpMethod.Get && path.StartsWith("/api/users/") && path.EndsWith("/recommendations"))
+            {
+                HandleRecommendations(req);
+                return;
+            }
         }
 
         private void HandleRegister(HttpRestEventArgs req)
@@ -50,23 +52,19 @@ namespace DhProjekt.Handlers
             }
 
             var hash = PasswordHelper.HashPassword(password);
-
             var user = AppServices.UserRepo.CreateUser(username, hash);
 
             if (user == null)
             {
-                // Username existiert schon
                 SendError(req, HttpStatusCode.Conflict, "Username already exists.");
                 return;
             }
 
-            var json = new JsonObject
+            req.Respond((int)HttpStatusCode.Created, new JsonObject
             {
                 ["id"] = user.Id,
                 ["username"] = user.Username
-            };
-
-            req.Respond((int)HttpStatusCode.Created, json);
+            });
         }
 
         private void HandleLogin(HttpRestEventArgs req)
@@ -89,22 +87,94 @@ namespace DhProjekt.Handlers
                 return;
             }
 
-            var hash = PasswordHelper.HashPassword(password);
-            if (!string.Equals(hash, user.PasswordHash, StringComparison.Ordinal))
+            if (!PasswordHelper.VerifyPassword(password, user.PasswordHash))
             {
                 SendError(req, HttpStatusCode.Unauthorized, "Invalid username or password.");
                 return;
             }
 
-            var token = AuthManager.CreateToken(user.Id, user.Username);
 
-            var json = new JsonObject
+            var token = AuthManager.CreateToken(user.Id, AppServices.SessionRepo);
+
+            req.Respond((int)HttpStatusCode.OK, new JsonObject
             {
                 ["token"] = token,
-                ["username"] = user.Username
-            };
+                ["username"] = user.Username,
+                ["expiresInSeconds"] = (int)AuthManager.TokenLifetime.TotalSeconds
+            });
+        }
 
-            req.Respond((int)HttpStatusCode.OK, json);
+        private void HandleRecommendations(HttpRestEventArgs req)
+        {
+            // Token prüfen
+            var token = GetTokenFromHeader(req.Context.Request);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                SendError(req, HttpStatusCode.Unauthorized, "Missing or invalid Authentication/Authorization header.");
+                return;
+            }
+
+            var requesterUserId = AuthManager.GetUserIdForToken(token, AppServices.SessionRepo);
+            if (requesterUserId == null)
+            {
+                SendError(req, HttpStatusCode.Unauthorized, "Invalid or expired token.");
+                return;
+            }
+
+            // Username aus URL extrahieren
+            // /api/users/{username}/recommendations
+            var middle = req.Path.Substring("/api/users/".Length);
+            var username = middle.Replace("/recommendations", "");
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                SendError(req, HttpStatusCode.BadRequest, "Username missing in URL.");
+                return;
+            }
+
+            var user = AppServices.UserRepo.GetByUsername(username);
+            if (user == null)
+            {
+                SendError(req, HttpStatusCode.NotFound, "User not found.");
+                return;
+            }
+
+            // Sicherheit: User darf nur eigene Recommendations abrufen
+            if (user.Id != requesterUserId.Value)
+            {
+                SendError(req, HttpStatusCode.Forbidden, "You can only request your own recommendations.");
+                return;
+            }
+
+            int limit = 10;
+            var limitText = req.Context.Request.QueryString["limit"];
+            if (!string.IsNullOrWhiteSpace(limitText) && int.TryParse(limitText, out var parsed))
+                limit = parsed;
+
+            var recs = AppServices.RecommendationRepo.GetRecommendations(user.Id, limit);
+
+            var arr = new JsonArray();
+            foreach (var (media, score, reason) in recs)
+            {
+                arr.Add(new JsonObject
+                {
+                    ["id"] = media.Id,
+                    ["title"] = media.Title,
+                    ["description"] = media.Description,
+                    ["mediaType"] = media.MediaType,
+                    ["releaseYear"] = media.ReleaseYear,
+                    ["genre"] = media.Genre,
+                    ["ageRestriction"] = media.AgeRestriction,
+                    ["createdBy"] = media.CreatedBy,
+                    ["score"] = score,
+                    ["reason"] = reason
+                });
+            }
+
+            req.Respond((int)HttpStatusCode.OK, new JsonObject
+            {
+                ["items"] = arr
+            });
         }
     }
 }

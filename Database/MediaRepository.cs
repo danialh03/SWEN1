@@ -1,7 +1,7 @@
-﻿using DhProjekt.Database;
-using Npgsql;
+﻿using Npgsql;
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace DhProjekt.Database
 {
@@ -38,18 +38,90 @@ namespace DhProjekt.Database
             return item;
         }
 
-        public List<MediaItem> GetAll()
+        // Search/Filter/Sort in SQL
+        public List<MediaItem> GetFiltered(
+            string? search,
+            string? genre,
+            string? mediaType,
+            int? releaseYear,
+            int? maxAgeRestriction,
+            double? minAverageScore,
+            string? sort,
+            string? order)
         {
             using var conn = _db.OpenConnection();
 
-            const string sql = @"
-                SELECT id, title, description, media_type, release_year, genre, age_restriction, created_by
-                FROM media
-                ORDER BY id";
+            // ich joine eine Aggregation der ratings, damit man nach Score filtern/sortieren kann
+            var sb = new StringBuilder();
+            sb.Append(@"
+                SELECT m.id, m.title, m.description, m.media_type, m.release_year, m.genre, m.age_restriction, m.created_by
+                FROM media m
+                LEFT JOIN (
+                    SELECT media_id, AVG(stars)::float8 AS avg_score
+                    FROM ratings
+                    GROUP BY media_id
+                ) r ON r.media_id = m.id
+                WHERE 1=1
+            ");
 
-            using var cmd = new NpgsqlCommand(sql, conn);
+            var cmd = new NpgsqlCommand();
+            cmd.Connection = conn;
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                // partial match (case-insensitive)
+                sb.Append(" AND m.title ILIKE @search");
+                cmd.Parameters.AddWithValue("search", "%" + search.Trim() + "%");
+            }
+
+            if (!string.IsNullOrWhiteSpace(genre))
+            {
+                sb.Append(" AND m.genre = @genre");
+                cmd.Parameters.AddWithValue("genre", genre.Trim());
+            }
+
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                sb.Append(" AND m.media_type = @media_type");
+                cmd.Parameters.AddWithValue("media_type", mediaType.Trim());
+            }
+
+            if (releaseYear.HasValue)
+            {
+                sb.Append(" AND m.release_year = @release_year");
+                cmd.Parameters.AddWithValue("release_year", releaseYear.Value);
+            }
+
+            if (maxAgeRestriction.HasValue)
+            {
+                sb.Append(" AND m.age_restriction <= @max_age");
+                cmd.Parameters.AddWithValue("max_age", maxAgeRestriction.Value);
+            }
+
+            if (minAverageScore.HasValue)
+            {
+                // COALESCE => Medien ohne Ratings haben avg_score NULL -> wird zu 0
+                sb.Append(" AND COALESCE(r.avg_score, 0) >= @min_score");
+                cmd.Parameters.AddWithValue("min_score", minAverageScore.Value);
+            }
+
+            // Sort
+            var sortKey = (sort ?? "").Trim().ToLowerInvariant();
+            var sortDir = ((order ?? "asc").Trim().ToLowerInvariant() == "desc") ? "DESC" : "ASC";
+
+            string orderBy = sortKey switch
+            {
+                "title" => "m.title",
+                "year" => "m.release_year",
+                "score" => "COALESCE(r.avg_score, 0)",
+                _ => "m.id"
+            };
+
+            sb.Append($" ORDER BY {orderBy} {sortDir}");
+
+            cmd.CommandText = sb.ToString();
+
             using var reader = cmd.ExecuteReader();
-
             var result = new List<MediaItem>();
 
             while (reader.Read())
@@ -59,6 +131,10 @@ namespace DhProjekt.Database
 
             return result;
         }
+
+        // Für alte Calls: einfach ohne Filter
+        public List<MediaItem> GetAll()
+            => GetFiltered(null, null, null, null, null, null, null, null);
 
         public MediaItem? GetById(int id)
         {

@@ -2,19 +2,14 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
 using DhProjekt.Server;
+using DhProjekt.Helpers;
+
 
 namespace DhProjekt.Handlers
 {
-    /// Basis-Klasse für alle Handler + zentraler Event-Handler für den Server.
-
     public abstract class Handler : IHandler
     {
-        // Cache der gefundenen Handler-Instanzen
         private static List<IHandler>? _handlers;
-
-
-        /// Sucht alle Klassen im aktuellen Assembly, die IHandler implementieren
-        /// und erzeugt Instanzen davon
 
         private static List<IHandler> GetHandlers()
         {
@@ -25,46 +20,40 @@ namespace DhProjekt.Handlers
                                          .Where(t => typeof(IHandler).IsAssignableFrom(t) && !t.IsAbstract))
             {
                 if (Activator.CreateInstance(type) is IHandler handler)
-                {
                     result.Add(handler);
-                }
             }
 
             return result;
         }
-
-
-        /// Wird vom Server bei jedem Request aufgerufen.
-        /// Verteilt den Request an alle Handler, bis einer antwortet.
 
         public static void HandleEvent(object? sender, HttpRestEventArgs e)
         {
             foreach (var handler in _handlers ??= GetHandlers())
             {
                 handler.Handle(e);
-                if (e.Responded) break; // jemand hat geantwortet -> fertig
+                if (e.Responded) break;
             }
         }
 
-        // Abstrakte Methode, die jeder konkrete Handler implementiert.
         public abstract void Handle(HttpRestEventArgs e);
 
-
-        // Hilfsmethoden, die alle Handler verwenden können
-
-        /// Liest den Token aus dem Header "Authentication: Bearer &lt;token&gt;".
+        // Accept BOTH headers: spec uses "Authentication", standard is "Authorization"
         protected static string? GetTokenFromHeader(HttpListenerRequest httpRequest)
         {
-            var header = httpRequest.Headers["Authentication"];
-            if (string.IsNullOrWhiteSpace(header)) return null;
+            var authentication = httpRequest.Headers["Authentication"];
+            var authorization = httpRequest.Headers["Authorization"];
 
-            const string prefix = "Bearer ";
-            if (!header.StartsWith(prefix)) return null;
-
-            return header[prefix.Length..].Trim();
+            return AuthHeaderHelper.TryGetBearerToken(authorization, authentication);
         }
 
-        /// Einheitliche Fehlerantwort
+
+        // Mini Query Parser: "?a=1&b=hello" -> Dictionary
+        protected static Dictionary<string, string> GetQueryParams(HttpListenerRequest req)
+        {
+            return QueryStringHelper.Parse(req.Url?.Query);
+        }
+
+
         protected static void SendError(HttpRestEventArgs req, HttpStatusCode statusCode, string message)
         {
             var json = new JsonObject
@@ -76,7 +65,6 @@ namespace DhProjekt.Handlers
             req.Respond((int)statusCode, json);
         }
 
-        /// Hilfsfunktion: String aus JSON holen ("Title" oder "title").
         protected static string? GetString(JsonObject body, string name)
         {
             if (body[name] is JsonNode node1)
@@ -89,7 +77,6 @@ namespace DhProjekt.Handlers
             return null;
         }
 
-        /// Hilfsfunktion: int? aus JSON holen.
         protected static int? GetInt(JsonObject body, string name)
         {
             var text = GetString(body, name);

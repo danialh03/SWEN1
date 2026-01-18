@@ -1,13 +1,11 @@
 ﻿using System.Net;
 using System.Text.Json.Nodes;
-using DhProjekt;
 using DhProjekt.Auth;
 using DhProjekt.Database;
 using DhProjekt.Server;
 
 namespace DhProjekt.Handlers
 {
-    /// Handler für Media-Endpoints (CRUD).
     public sealed class MediaHandler : Handler, IHandler
     {
         public override void Handle(HttpRestEventArgs req)
@@ -15,68 +13,39 @@ namespace DhProjekt.Handlers
             var path = req.Path;
             var method = req.Method;
 
-            // Nur /api/media... wird hier behandelt
             if (!path.StartsWith("/api/media"))
                 return;
 
-            // 1) Auth-Check: alle Media-Routen brauchen ein gültiges Token
             var token = GetTokenFromHeader(req.Context.Request);
             if (string.IsNullOrWhiteSpace(token))
             {
-                SendError(req, HttpStatusCode.Unauthorized, "Missing or invalid Authentication header.");
+                SendError(req, HttpStatusCode.Unauthorized, "Missing or invalid Authentication/Authorization header.");
                 return;
             }
 
-            var userId = AuthManager.GetUserIdForToken(token);
+            var userId = AuthManager.GetUserIdForToken(token, AppServices.SessionRepo);
             if (userId == null)
             {
                 SendError(req, HttpStatusCode.Unauthorized, "Invalid or expired token.");
                 return;
             }
 
-            // 2) /api/media  (ohne Id)
             if (path == "/api/media")
             {
-                if (method == HttpMethod.Get)
-                {
-                    ListMedia(req);
-                    return;
-                }
-
-                if (method == HttpMethod.Post)
-                {
-                    CreateMedia(req, userId.Value);
-                    return;
-                }
+                if (method == HttpMethod.Get) { ListMedia(req); return; }
+                if (method == HttpMethod.Post) { CreateMedia(req, userId.Value); return; }
             }
 
-            // 3) /api/media/{id}
             if (path.StartsWith("/api/media/"))
             {
                 var idText = path.Substring("/api/media/".Length);
                 if (int.TryParse(idText, out var id))
                 {
-                    if (method == HttpMethod.Get)
-                    {
-                        GetMediaById(req, id);
-                        return;
-                    }
-
-                    if (method == HttpMethod.Put)
-                    {
-                        UpdateMedia(req, id, userId.Value);
-                        return;
-                    }
-
-                    if (method == HttpMethod.Delete)
-                    {
-                        DeleteMedia(req, id, userId.Value);
-                        return;
-                    }
+                    if (method == HttpMethod.Get) { GetMediaById(req, id); return; }
+                    if (method == HttpMethod.Put) { UpdateMedia(req, id, userId.Value); return; }
+                    if (method == HttpMethod.Delete) { DeleteMedia(req, id, userId.Value); return; }
                 }
             }
-
-            // Wenn wir hier landen, macht dieser Handler nichts -> evtl. anderer Handler
         }
 
         private void CreateMedia(HttpRestEventArgs req, int userId)
@@ -108,26 +77,39 @@ namespace DhProjekt.Handlers
             };
 
             var created = AppServices.MediaRepo.Create(item);
-
-            req.Respond((int)HttpStatusCode.Created, MediaToJson(created));
+            req.Respond((int)HttpStatusCode.Created, MediaToJsonWithStats(created));
         }
 
+        // Search/Filter/Sort via Query Params
         private void ListMedia(HttpRestEventArgs req)
         {
-            var list = AppServices.MediaRepo.GetAll();
+            var q = GetQueryParams(req.Context.Request);
+
+            q.TryGetValue("search", out var search);
+            q.TryGetValue("genre", out var genre);
+            q.TryGetValue("mediaType", out var mediaType);
+            q.TryGetValue("sort", out var sort);
+            q.TryGetValue("order", out var order);
+
+            int? year = null;
+            if (q.TryGetValue("releaseYear", out var yearText) && int.TryParse(yearText, out var y))
+                year = y;
+
+            int? maxAge = null;
+            if (q.TryGetValue("maxAgeRestriction", out var ageText) && int.TryParse(ageText, out var a))
+                maxAge = a;
+
+            double? minScore = null;
+            if (q.TryGetValue("minScore", out var scoreText) && double.TryParse(scoreText, out var s))
+                minScore = s;
+
+            var list = AppServices.MediaRepo.GetFiltered(search, genre, mediaType, year, maxAge, minScore, sort, order);
+
             var arr = new JsonArray();
-
             foreach (var m in list)
-            {
-                arr.Add(MediaToJson(m));
-            }
+                arr.Add(MediaToJsonWithStats(m));
 
-            var json = new JsonObject
-            {
-                ["items"] = arr
-            };
-
-            req.Respond((int)HttpStatusCode.OK, json);
+            req.Respond((int)HttpStatusCode.OK, new JsonObject { ["items"] = arr });
         }
 
         private void GetMediaById(HttpRestEventArgs req, int id)
@@ -139,7 +121,7 @@ namespace DhProjekt.Handlers
                 return;
             }
 
-            req.Respond((int)HttpStatusCode.OK, MediaToJson(item));
+            req.Respond((int)HttpStatusCode.OK, MediaToJsonWithStats(item));
         }
 
         private void UpdateMedia(HttpRestEventArgs req, int id, int userId)
@@ -180,7 +162,7 @@ namespace DhProjekt.Handlers
                 return;
             }
 
-            req.Respond((int)HttpStatusCode.OK, MediaToJson(existing));
+            req.Respond((int)HttpStatusCode.OK, MediaToJsonWithStats(existing));
         }
 
         private void DeleteMedia(HttpRestEventArgs req, int id, int userId)
@@ -188,38 +170,33 @@ namespace DhProjekt.Handlers
             var ok = AppServices.MediaRepo.Delete(id, userId);
             if (!ok)
             {
-                SendError(req, HttpStatusCode.Forbidden,
-                    "You are not allowed to delete this media or it does not exist.");
+                SendError(req, HttpStatusCode.Forbidden, "You are not allowed to delete this media or it does not exist.");
                 return;
             }
 
-            var json = new JsonObject
-            {
-                ["success"] = true
-            };
-
-            req.Respond((int)HttpStatusCode.OK, json);
+            req.Respond((int)HttpStatusCode.OK, new JsonObject { ["success"] = true });
         }
 
-        private static JsonObject MediaToJson(MediaItem m)
+        private static JsonObject MediaToJsonWithStats(MediaItem m)
         {
+            var (avg, count) = AppServices.RatingRepo.GetMediaStats(m.Id);
+
             var json = new JsonObject
             {
                 ["id"] = m.Id,
                 ["title"] = m.Title,
                 ["description"] = m.Description,
                 ["mediaType"] = m.MediaType,
-                ["createdBy"] = m.CreatedBy
+                ["createdBy"] = m.CreatedBy,
+                ["ratingsCount"] = count
             };
 
-            if (m.ReleaseYear.HasValue)
-                json["releaseYear"] = m.ReleaseYear.Value;
+            if (avg != null)
+                json["averageScore"] = avg.Value;
 
-            if (m.Genre != null)
-                json["genre"] = m.Genre;
-
-            if (m.AgeRestriction.HasValue)
-                json["ageRestriction"] = m.AgeRestriction.Value;
+            if (m.ReleaseYear.HasValue) json["releaseYear"] = m.ReleaseYear.Value;
+            if (m.Genre != null) json["genre"] = m.Genre;
+            if (m.AgeRestriction.HasValue) json["ageRestriction"] = m.AgeRestriction.Value;
 
             return json;
         }
